@@ -50,6 +50,27 @@ you are debugging."
   :risky t
   :type '(choice (string) (const :tag "None" nil)))
 
+(defcustom dap-python-virtualenv-enable nil
+  "Enable Virutalenv integration."
+  :group 'dap-python
+  :risky t
+  :type 'boolean)
+
+(defcustom dap-python-virtualenv-default-path ".venv"
+  "Default virtualenv path."
+  :group 'dap-python
+  :risky t
+  :type 'file)
+
+(defun dap-python--virtualenv-executable-find (workspace-root command)
+  "Find executable COMMAND with virutalenv in WORKSPACE-ROOT."
+  (let* ((venv-root (expand-file-name
+                     (concat dap-python-virtualenv-default-path "/bin")
+                     workspace-root)))
+    (if (and dap-python-virtualenv-enable
+             (file-exists-p venv-root))
+        (locate-file command `(,venv-root) exec-suffixes 1))))
+
 (defun dap-python--pyenv-executable-find (command)
   "Find executable COMMAND, taking pyenv shims into account.
 If the executable is a system executable and not in the same path
@@ -71,6 +92,16 @@ https://github.com/pyenv/pyenv-which-ext."
                 (setq i (1+ i))))
           executable))
     (executable-find command)))
+
+(defun dap-python--executable-find (command)
+  "Find python executable COMMAND in following order:
+1. venv/virtualenv
+2. pyenv
+3. system path (exec-path)"
+  (let ((env-exec (dap-python--virtualenv-executable-find (lsp-workspace-root) command)))
+    (if env-exec
+        env-exec
+      (dap-python--pyenv-executable-find command))))
 
 (cl-defstruct dap-python--point
   (line nil :type integer)
@@ -171,7 +202,7 @@ strings, for the sake of launch.json feature parity."
 
 (defun dap-python--populate-start-file-args (conf)
   "Populate CONF with the required arguments."
-  (let* ((python-executable (dap-python--pyenv-executable-find dap-python-executable))
+  (let* ((python-executable (dap-python--executable-find dap-python-executable))
          (python-args (plist-get conf :args))
          (program (or (plist-get conf :target-module)
                       (plist-get conf :program)
